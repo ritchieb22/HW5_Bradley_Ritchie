@@ -1,0 +1,143 @@
+---
+title: "Hw5_Bradley_Ritchie"
+author: "Ritchie Bradley"
+date: "3/7/2022"
+output: html_document
+---
+```{r}
+library(shiny)
+library(shinydashboard)
+library(babynames)
+library(tidyverse)
+library(viridis)
+library(plotly)
+library(stringdist)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(ggplot2)
+
+
+ui <- dashboardPage(
+    # format
+  skin="purple",
+  
+  dashboardHeader(
+    title="Median Income and Rent by US State/Territory (2019 Census Data)", titleWidth = 500
+  ),
+  
+  # define the sidebar
+  dashboardSidebar(
+    # set sidebar menu  
+    sidebarMenu(
+      textInput("in_state","Input State Name",value="Colorado"),
+      menuItem("Monthly Income by State/Territory", tabName = "by_state"),
+      menuItem("Monthly Rent by State/Territory", tabName =  "by_state2"),  
+      menuItem("Consumer Price Index", tabName = "by_cpi")
+    )
+  ),
+  
+  # define the body
+  dashboardBody(
+    tabItems(
+      # first page
+      tabItem("by_state",
+              h2(textOutput("in_state1", inline=TRUE),"median monthly income ($)"),
+              box(plotlyOutput("p_m_income"), width= 500)
+      ),
+      # second page
+      tabItem("by_state2",
+              h2(textOutput("in_state2", inline=TRUE)," median monthly rent ($)"),
+              box(plotlyOutput("p_m_rent"), width= 500)
+      ),
+        tabItem("by_cpi",
+              h2(textOutput("Annual Consumer Price Index Average. CPI measures changes in the prices paid by consumers for a basket of goods and services."),
+              box(plotlyOutput("p_timeseries"), width= 500)))
+     
+  
+      )))
+    
+
+
+
+
+server <- function(input, output) {
+  rent <- us_rent_income #since my data has income and rent on different lines, I decided to use that to make different data sets to plot
+rows <-nrow(rent)
+even <- seq_len(rows) %% 2
+
+income <- rent[even == 1,]
+rent <- rent[even == 0,]
+
+stan_income <- income%>% mutate(income.estimate = round(income$estimate/12))#rounding average monthly income from median income for 2019 
+stan_income[52,6] <- 20539/12 #Puerto Rico was missing, so I had to pull this data from the census website for 2019
+names(stan_income)[names(stan_income)=="income.estimate"] <- "MonthInc"
+rent <- select(rent, NAME, estimate)
+
+stan_income <- select(stan_income, NAME, MonthInc)
+money<-left_join(stan_income, rent, by=c("NAME"="NAME"))
+names(money)[names(money)=="estimate"] <- "MonthRent"
+
+cpi <- read.csv("Annual Consumer Price Index 1912-2022.csv")
+names(cpi)[names(cpi)=="ï..Year"] <- "Year" #data from the CPI has a weird formatting for some reason, so I had to rename this column.
+ 
+  output$in_state1 <- renderText({
+    input$in_state
+  })
+  output$in_state2 <- renderText({
+    input$in_state
+  })
+  
+  # --------------------------------------------------
+  # Monthly Income Bar
+  # --------------------------------------------------
+  output$p_m_income <- renderPlotly({
+    
+    in_state <-  input$in_state
+    
+    mincome <- (money %>% filter(NAME==in_state,))
+    p_m_income <- plot_ly(mincome, x=~NAME, y=~MonthInc)
+  
+    
+    })
+  # --------------------------------------------------
+  #Rent chart
+  # --------------------------------------------------
+  output$p_m_rent <- renderPlotly({
+    
+    in_state <-  input$in_state
+    
+    m_rent <- (money %>% filter(NAME==in_state,))
+    p_m_rent <- plot_ly(m_rent, x=~NAME, y=~MonthRent, color = "orange") 
+    
+  
+    })
+  # --------------------------------------------------
+  #Consumer Price Index Timeseries; data can be found here:https://data.bls.gov/pdq/SurveyOutputServlet
+  # --------------------------------------------------
+  
+  output$p_timeseries <- renderPlotly({
+    
+    p_timeseries <- ggplot(cpi,
+                           aes(x=Year,
+                               y=Annual)) +
+      geom_line() + 
+            theme_minimal() +
+      theme(axis.title = element_blank(),
+            legend.position = "none")+
+      labs(title = "National average annual consumer price index")
+     
+    
+    ggplotly(p_timeseries) %>%
+      layout(hovermode = "x") %>%
+      rangeslider(start=min(cpi$Year), end=max(cpi$Year)) 
+  })
+  
+    
+  
+  
+  
+}
+
+shinyApp(ui, server)
+```
